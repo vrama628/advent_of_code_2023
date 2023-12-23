@@ -33,12 +33,12 @@ impl Coordinate {
         }
     }
 
-    fn fall(&self) -> Self {
-        Self {
+    fn fall(&self) -> Option<Self> {
+        (self.z > 0).then(|| Self {
             x: self.x,
             y: self.y,
-            z: self.z + 1,
-        }
+            z: self.z - 1,
+        })
     }
 }
 
@@ -78,10 +78,13 @@ impl Bricks {
     fn can_fall(&self) -> Option<Brick> {
         self.brick_to_coordinate
             .iter()
-            .find(|(_, coordinates)| {
-                coordinates
-                    .iter()
-                    .all(|coordinate| !self.coordinate_to_brick.contains_key(&coordinate.fall()))
+            .find(|(brick, coordinates)| {
+                coordinates.iter().all(|coordinate| {
+                    coordinate.fall().is_some_and(|fallen| {
+                        let fallen_location = self.coordinate_to_brick.get(&fallen);
+                        fallen_location.is_none() || fallen_location == Some(brick)
+                    })
+                })
             })
             .map(|(brick, _)| brick.clone())
     }
@@ -93,7 +96,7 @@ impl Bricks {
                 brick,
                 coordinates
                     .iter()
-                    .map(|coordinate| coordinate.fall())
+                    .map(|coordinate| coordinate.fall().unwrap())
                     .collect(),
             );
         }
