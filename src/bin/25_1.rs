@@ -1,10 +1,12 @@
-use std::{io::stdin, str::FromStr};
+use std::{collections::VecDeque, io::stdin, str::FromStr};
 
 use im::{HashMap, HashSet};
 use itertools::Itertools;
 
 type Node = String;
+type Edge = (Node, Node);
 
+#[derive(Clone)]
 struct Graph {
     nodes: HashSet<Node>,
     edges: HashMap<Node, HashSet<Node>>,
@@ -18,7 +20,7 @@ impl Graph {
         }
     }
 
-    fn add_edge(&self, edge: (Node, Node)) -> Self {
+    fn add_edge(&self, edge: Edge) -> Self {
         let nodes = self.nodes.update(edge.0.clone()).update(edge.1.clone());
         let new_edges = vec![
             (edge.0.clone(), HashSet::unit(edge.1.clone())),
@@ -29,19 +31,26 @@ impl Graph {
         Self { nodes, edges }
     }
 
-    fn edges(&self) -> Vec<(Node, Node)> {
-        self.edges
-            .iter()
-            .flat_map(|(node, neighbors)| {
-                neighbors
-                    .iter()
-                    .map(|neighbor| (node.clone(), neighbor.clone()))
-            })
-            .filter(|(a, b)| a < b)
-            .collect()
+    fn find_path(&self, start: Node, end: Node) -> Vec<Edge> {
+        let mut seen = HashSet::unit(start.clone());
+        let mut queue: VecDeque<(Node, Vec<Edge>)> = VecDeque::from([(start.clone(), vec![])]);
+        while let Some((node, path)) = queue.pop_front() {
+            for neighbor in self.edges.get(&node).unwrap() {
+                if !seen.contains(neighbor) {
+                    let mut new_path = path.clone();
+                    new_path.push((node.clone(), neighbor.clone()));
+                    if neighbor == &end {
+                        return new_path;
+                    }
+                    seen.insert(neighbor.clone());
+                    queue.push_back((neighbor.clone(), new_path));
+                }
+            }
+        }
+        panic!("No path found")
     }
 
-    fn remove_edge(&self, edge: (Node, Node)) -> Self {
+    fn remove_edge(&self, edge: Edge) -> Self {
         let nodes = self.nodes.clone();
         let edges = self
             .edges
@@ -56,21 +65,24 @@ impl Graph {
         Self { nodes, edges }
     }
 
-    fn component(&self) -> usize {
-        let mut seen = HashSet::new();
-        let mut stack = vec![];
-        let first_node = self.nodes.iter().next().unwrap();
-        seen.insert(first_node);
-        stack.push(first_node);
-        while let Some(node) = stack.pop() {
-            for neighbor in self.edges.get(node).unwrap() {
-                if !seen.contains(neighbor) {
-                    seen.insert(neighbor);
-                    stack.push(neighbor);
+    fn component_sizes(&self) -> Vec<usize> {
+        let mut unseen = self.nodes.clone();
+        let mut component_sizes = vec![];
+        while let Some(start) = unseen.iter().next() {
+            let mut seen = HashSet::unit(start.clone());
+            let mut stack = vec![start.clone()];
+            while let Some(node) = stack.pop() {
+                for neighbor in self.edges.get(&node).unwrap() {
+                    if !seen.contains(neighbor) {
+                        seen.insert(neighbor.clone());
+                        stack.push(neighbor.clone());
+                    }
                 }
             }
+            component_sizes.push(seen.len());
+            unseen = unseen.relative_complement(seen)
         }
-        seen.len()
+        component_sizes
     }
 }
 
@@ -94,22 +106,33 @@ impl Input {
     }
 
     fn solve(&self) -> usize {
-        self.0
-            .edges()
+        for (start, end) in self
+            .0
+            .nodes
+            .iter()
+            .collect_vec()
             .into_iter()
             .tuple_combinations()
-            .into_iter()
-            .find_map(|(a, b, c)| {
-                let component = self
-                    .0
-                    .remove_edge(a)
-                    .remove_edge(b)
-                    .remove_edge(c)
-                    .component();
-                (component < self.0.nodes.len())
-                    .then(|| component * (self.0.nodes.len() - component))
-            })
-            .unwrap()
+        {
+            let graph = self.0.clone();
+            let graph = graph
+                .find_path(start.clone(), end.clone())
+                .into_iter()
+                .fold(graph, |acc, edge| acc.remove_edge(edge));
+            let graph = graph
+                .find_path(start.clone(), end.clone())
+                .into_iter()
+                .fold(graph, |acc, edge| acc.remove_edge(edge));
+            let graph = graph
+                .find_path(start.clone(), end.clone())
+                .into_iter()
+                .fold(graph, |acc, edge| acc.remove_edge(edge));
+            let component_sizes = graph.component_sizes();
+            if component_sizes.len() == 2 {
+                return component_sizes[0] * component_sizes[1];
+            }
+        }
+        panic!("No cut found")
     }
 }
 
