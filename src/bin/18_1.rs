@@ -1,10 +1,5 @@
 use itertools::Itertools;
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet},
-    io::stdin,
-    str::FromStr,
-};
+use std::{collections::HashSet, io::stdin, str::FromStr};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 enum Direction {
@@ -68,93 +63,75 @@ impl FromStr for Dig {
     }
 }
 
-struct Boundary {
-    column: i64,
-    width: i64,
-}
-
-impl Ord for Boundary {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.column.cmp(&other.column)
-    }
-}
-
-impl PartialOrd for Boundary {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Boundary {
-    fn eq(&self, other: &Self) -> bool {
-        self.column == other.column
-    }
-}
-
-impl Eq for Boundary {}
-
 /** rows of boundaries */
-struct Lagoon(BTreeMap<i64, BTreeSet<Boundary>>);
+struct Lagoon(HashSet<(i64, i64)>);
 
 impl Lagoon {
-    fn add_boundary(&mut self, (row, column): (i64, i64), width: i64) {
-        self.0
-            .entry(row)
-            .or_default()
-            .insert(Boundary { column, width });
-    }
-
     fn dig(digs: &[Dig]) -> Self {
         let mut position = (0, 0);
-        let mut this = Self(BTreeMap::new());
-        // up/down is exclusive on both ends; left/right is inclusive on both ends
-        // assumes the digs alternate between up/down and left/right
+        let mut boundaries = HashSet::from([position]);
         for dig in digs {
             match dig.direction {
                 Direction::Up => {
-                    for r in position.0 - dig.distance + 1..position.0 {
-                        this.add_boundary((r, position.1), 1);
+                    for _ in 0..dig.distance {
+                        position.0 -= 1;
+                        boundaries.insert(position);
                     }
-                    position.0 -= dig.distance;
                 }
                 Direction::Down => {
-                    for r in position.0 + 1..position.0 + dig.distance {
-                        this.add_boundary((r, position.1), 1);
+                    for _ in 0..dig.distance {
+                        position.0 += 1;
+                        boundaries.insert(position);
                     }
-                    position.0 += dig.distance;
                 }
                 Direction::Left => {
-                    position.1 -= dig.distance;
-                    this.add_boundary(position, dig.distance + 1);
+                    for _ in 0..dig.distance {
+                        position.1 -= 1;
+                        boundaries.insert(position);
+                    }
                 }
                 Direction::Right => {
-                    this.add_boundary(position, dig.distance + 1);
-                    position.1 += dig.distance;
+                    for _ in 0..dig.distance {
+                        position.1 += 1;
+                        boundaries.insert(position);
+                    }
                 }
             }
         }
-        this
+        Self(boundaries)
     }
 
-    fn solve(&self) -> i64 {
-        self.0
-            .values()
-            .map(|row| {
-                println!("ROW");
-                let res =
-                    row.iter()
-                        .inspect(|Boundary { column, width }| println!("{column} {width}"))
-                        .fold((0, None), |(sum, interior), Boundary { column, width }| {
-                            match interior {
-                                Some(interior) => (sum + width + column - interior, None),
-                                None => (sum + width, Some(column + width)),
-                            }
-                        })
-                        .0;
-                println!("--> {res}");
-                res
+    fn solve(&self) -> usize {
+        let min_r = self.0.iter().map(|(r, _)| r).min().unwrap() - 1;
+        let max_r = self.0.iter().map(|(r, _)| r).max().unwrap() + 2;
+        let min_c = self.0.iter().map(|(_, c)| c).min().unwrap() - 1;
+        let max_c = self.0.iter().map(|(_, c)| c).max().unwrap() + 2;
+
+        let mut seen = HashSet::from([(min_r, min_c)]);
+        let mut stack = vec![(min_r, min_c)];
+        while let Some(node) = stack.pop() {
+            for neighbor in [
+                (node.0 - 1, node.1),
+                (node.0 + 1, node.1),
+                (node.0, node.1 - 1),
+                (node.0, node.1 + 1),
+            ]
+            .into_iter()
+            .filter(|neighbor| {
+                min_r <= neighbor.0
+                    && neighbor.0 < max_r
+                    && min_c <= neighbor.1
+                    && neighbor.1 < max_c
+                    && !seen.contains(neighbor)
+                    && !self.0.contains(neighbor)
             })
-            .sum()
+            .collect_vec()
+            {
+                seen.insert(neighbor);
+                stack.push(neighbor);
+            }
+        }
+        ((max_r - min_r) * (max_c - min_c)) as usize - seen.len()
     }
 }
 
@@ -170,7 +147,7 @@ impl Input {
         )
     }
 
-    fn solve(&self) -> i64 {
+    fn solve(&self) -> usize {
         Lagoon::dig(&self.0).solve()
     }
 }
